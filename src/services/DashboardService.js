@@ -6,13 +6,13 @@ import { CheckIn } from '../models/CheckIn.js'
 import { Op, fn, col, literal } from 'sequelize'
 
 export class DashboardService {
-  
+
   /**
    * Converte timestamptz para hora local brasileira
    */
   static getLocalHour(timestamp) {
     const date = new Date(timestamp)
-    
+
     try {
       // Usar timezone do Brasil
       const localTime = date.toLocaleString('pt-BR', {
@@ -40,10 +40,10 @@ export class DashboardService {
       local_hour_js: date.getHours(),
       local_hour_br: this.getLocalHour(timestamp),
       timezone_offset: date.getTimezoneOffset(),
-      locale_br: date.toLocaleString('pt-BR', { 
+      locale_br: date.toLocaleString('pt-BR', {
         timeZone: 'America/Sao_Paulo',
         year: 'numeric',
-        month: '2-digit', 
+        month: '2-digit',
         day: '2-digit',
         hour: '2-digit',
         minute: '2-digit'
@@ -79,6 +79,10 @@ export class DashboardService {
     const novasAssinaturasSemana = await Assinatura.count({
       where: { createdAt: { [Op.gte]: semanaAtras } }
     })
+
+    const receitaSemana = (await Assinatura.sum('valor', {
+      where: { createdAt: { [Op.gte]: semanaAtras } }
+    })) || 0;
 
     const checkinsHoje = await CheckIn.count({
       where: { entrada: { [Op.gte]: hoje, [Op.lt]: amanha } }
@@ -175,7 +179,7 @@ export class DashboardService {
         assinaturasVencendoEm10Dias,
         novasAssinaturasSemana,
         checkinsHoje,
-        clientesNaAcademia
+        receitaSemana
       },
       chart: { labels, novos },
       recentCheckins,
