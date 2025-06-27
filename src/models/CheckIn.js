@@ -1,20 +1,12 @@
-//Arthur
 import { Model, DataTypes } from 'sequelize';
 
 class CheckIn extends Model {
   static init(sequelize) {
-    super.init({
+    return super.init({
       entrada: {
-        type: DataTypes.DATE, // Tipo correto para armazenar data e hora
+        type: DataTypes.DATE,
         allowNull: false,
-        validate: {
-          notNull: { msg: 'Horário de entrada é obrigatório' },
-          isValidDateTimeFormat(value) {
-            if (!(value instanceof Date) || isNaN(value.getTime())) {
-              throw new Error('Valor de data/hora inválido');
-            }
-          }
-        }
+        defaultValue: DataTypes.NOW
       },
       saida: {
         type: DataTypes.DATE,
@@ -30,28 +22,27 @@ class CheckIn extends Model {
       acesso_autorizado: {
         type: DataTypes.BOOLEAN,
         allowNull: false,
-        defaultValue: false,
-        validate: {
-          isBoolean(value) {
-            if (typeof value !== 'boolean') {
-              throw new Error('O campo "acesso_autorizado" deve ser verdadeiro ou falso');
-            }
-          }
-        }
+        defaultValue: true
       },
       razao_bloqueio: {
-        type: DataTypes.STRING,
+        type: DataTypes.STRING(100),
         allowNull: true,
         validate: {
-          len: {
-            args: [0, 100],
-            msg: 'Razão do bloqueio não pode ter mais que 100 caracteres'
-          }
+          len: { args: [0, 100], msg: 'Razão do bloqueio não pode ter mais que 100 caracteres' }
+        }
+      },
+      assinatura_id: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        references: { model: 'assinaturas', key: 'id' },
+        validate: {
+          notNull: { msg: 'O campo assinatura_id é obrigatório' },
+          isInt:   { msg: 'assinatura_id deve ser um inteiro' }
         }
       }
     }, {
       sequelize,
-      modelName: 'checkin',
+      modelName: 'checkIn',
       tableName: 'checkins',
       timestamps: false
     });
@@ -60,13 +51,9 @@ class CheckIn extends Model {
   static associate(models) {
     this.belongsTo(models.assinatura, {
       as: 'assinatura',
-      foreignKey: {
-        name: 'assinatura_id',
-        allowNull: false,
-        validate: {
-          notNull: { msg: 'O campo assinatura_id deve ser preenchido com um valor válido!' }
-        }
-      }
+      foreignKey: 'assinatura_id',
+      onDelete: 'RESTRICT',
+      onUpdate: 'CASCADE'
     });
   }
 }

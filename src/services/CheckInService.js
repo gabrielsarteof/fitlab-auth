@@ -1,6 +1,6 @@
 //Arthur
 import { CheckIn } from '../models/CheckIn.js';
-import { Cliente } from '../models/Cliente.js';
+import { Assinatura } from '../models/Assinatura.js';
 import sequelize from '../config/database-connection.js';
 import { QueryTypes } from 'sequelize';
 
@@ -21,33 +21,94 @@ class CheckInService {
   }
 
   static async create(req) {
-    const { entrada, saida, acesso_autorizado, razao_bloqueio, cliente_id } = req.body;
+    const { assinatura_id, saida } = req.body;
+    if (!assinatura_id) throw 'Campo assinatura_id é obrigatório.';
 
-    if (!entrada || !cliente_id) {
-      throw 'Horário de entrada e cliente_id são obrigatórios.';
+    // carrega assinatura + cliente + plano
+    const assinatura = await Assinatura.findByPk(assinatura_id, {
+      include: ['cliente', 'plano']
+    });
+    if (!assinatura) throw 'Assinatura não encontrada.';
+
+    const cliente_id = assinatura.cliente_id;
+    const plano      = assinatura.plano;            // objeto Plano com .frequencia
+    const agora      = new Date();
+
+    // verifica expiração
+    let acesso_autorizado = true;
+    let razao_bloqueio     = null;
+    if (new Date(assinatura.expires_at) < agora) {
+      acesso_autorizado = false;
+      razao_bloqueio    = 'Assinatura expirada';
     }
 
-    if (await this.verificarRegrasDeNegocio(req)) {
-      const t = await sequelize.transaction();
-      try {
-        const obj = await CheckIn.create(
-          {
-            entrada,
-            saida: saida || null,
-            acesso_autorizado: acesso_autorizado !== undefined ? acesso_autorizado : true,
-            razao_bloqueio: razao_bloqueio || null,
-            cliente_id,
-          },
-          { transaction: t }
-        );
+    // RN1: só 1 check-in por dia
+    await this.verificarRegrasDeNegocio({
+      cliente_id,
+      dataEntrada: agora,
+      plano_frequencia: plano.frequencia
+    });
 
-        await t.commit();
-        return await CheckIn.findByPk(obj.id, { include: { all: true, nested: true } });
-      } catch (error) {
-        await t.rollback();
-        throw "Erro ao criar checkin!";
-      }
+    // grava com transaction
+    const t = await sequelize.transaction();
+    try {
+      const obj = await CheckIn.create({
+        assinatura_id,
+        entrada:           agora,
+        saida:             saida || null,
+        acesso_autorizado,
+        razao_bloqueio
+      }, { transaction: t });
+
+      await t.commit();
+      return await CheckIn.findByPk(obj.id, { include: ['assinatura'] });
+    } catch (err) {
+      await t.rollback();
+      throw 'Erro ao criar check-in!';
     }
+  }
+
+  static async verificarRegrasDeNegocio({ cliente_id, dataEntrada, plano_frequencia }) {
+    // 1) Já fez check-in hoje?
+    const di = await sequelize.query(
+      `SELECT 1
+         FROM checkins c
+         JOIN assinaturas a ON c.assinatura_id = a.id
+        WHERE a.cliente_id = :cliente_id
+          AND DATE(c.entrada) = DATE(:dataEntrada)
+        LIMIT 1`,
+      { replacements: { cliente_id, dataEntrada }, type: QueryTypes.SELECT }
+    );
+    if (di.length) throw 'Cliente já fez check-in hoje!';
+
+    // 2) Quantos na última semana?
+    const umaSemanaAtras = new Date(dataEntrada);
+    umaSemanaAtras.setDate(umaSemanaAtras.getDate() - 7);
+
+    const [{ total }] = await sequelize.query(
+      `SELECT COUNT(*)::int AS total
+         FROM checkins c
+         JOIN assinaturas a ON c.assinatura_id = a.id
+        WHERE a.cliente_id = :cliente_id
+          AND c.entrada BETWEEN :umaSemanaAtras AND :dataEntrada`,
+      { replacements: { cliente_id, umaSemanaAtras, dataEntrada }, type: QueryTypes.SELECT }
+    );
+
+    // 3) Extrai o número permitido do campo `frequencia`
+    let limiteSemanal;
+    const txt = plano_frequencia.toLowerCase();
+    if (txt.includes('ilimit')) {
+      limiteSemanal = Infinity;
+    } else {
+      const m = txt.match(/(\d+)/);
+      limiteSemanal = m ? parseInt(m[1], 10) : 0;
+    }
+
+    if (limiteSemanal !== Infinity && total >= limiteSemanal) {
+      throw `Limite semanal de ${limiteSemanal} check-ins atingido para este plano!`;
+    }
+
+    return true;
   }
 
   static async update(req) {
@@ -80,7 +141,7 @@ class CheckInService {
     const { id } = req.params;
     const obj = await CheckIn.findByPk(id);
     if (obj == null) throw 'CheckIn não encontrado!';
-    
+
     try {
       await obj.destroy();
       return obj;
@@ -89,50 +150,7 @@ class CheckInService {
     }
   }
 
-  // RN1: Cliente não pode fazer mais de um check-in por dia
-  // RN2: Limite de 7 diárias semanais
-  static async verificarRegrasDeNegocio(req) {
-    const { entrada, cliente_id } = req.body;
-
-    const dataEntrada = new Date(entrada);
-    const umaSemanaAtras = new Date(dataEntrada);
-    umaSemanaAtras.setDate(dataEntrada.getDate() - 7);
-
-    // Regra de Negócio 1: Verificação de check-in diário
-    const checkInsDiarios = await sequelize.query(
-      `SELECT entrada
-       FROM CheckIns
-       WHERE cliente_id = :cliente_id
-       AND DATE(entrada) = DATE(:dataEntrada)`,
-      {
-        replacements: { cliente_id, dataEntrada },
-        type: QueryTypes.SELECT,
-      }
-    );
-
-    if (checkInsDiarios.length > 0) {
-      throw "Cliente já fez check-in hoje!";
-    }
-
-    // Regra de Negócio 2: Limite de diárias semanais (7 diárias por semana)
-    const [countSemanal] = await sequelize.query(
-      `SELECT COUNT(*) as total
-       FROM CheckIns
-       WHERE cliente_id = :cliente_id
-       AND entrada >= :umaSemanaAtras
-       AND entrada <= :dataEntrada`,
-      {
-        replacements: { cliente_id, umaSemanaAtras, dataEntrada },
-        type: QueryTypes.SELECT,
-      }
-    );
-
-    if (countSemanal.total >= 7) {
-      throw "Limite de 7 diárias semanais atingido!";
-    }
-
-    return true;
-  }
+  
 
   static async findByCliente(req) {
     const { cliente_id } = req.params;

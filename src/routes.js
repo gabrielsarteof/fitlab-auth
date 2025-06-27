@@ -11,6 +11,7 @@ import { PersonalTrainerController } from './controllers/PersonalTrainerControll
 import { PlanoController } from './controllers/PlanoController.js';
 import { TreinoController } from './controllers/TreinoController.js';
 import { AuthController } from './controllers/AuthController.js';
+import { DashboardController } from './controllers/DashboardController.js';
 import { authenticateToken } from '../src/_middleware/auth.js';
 
 const routes = express.Router();
@@ -18,20 +19,22 @@ const routes = express.Router();
 // Rotas de autenticação (públicas)
 routes.post('/login', AuthController.login);
 routes.post('/verify-token', AuthController.verifyToken);
-routes.post('/administradores', AdministradorController.create);
 
 // Rota protegida para obter dados do admin logado
 routes.get('/me', authenticateToken, AuthController.me);
 
 // Todas as outras rotas são protegidas
 routes.use(authenticateToken);
+routes.get('/dashboard/overview',DashboardController.overview);
 
 routes.get('/administradores', AdministradorController.findAll);
 routes.get('/administradores/:id', AdministradorController.findByPk);
+routes.post('/administradores', AdministradorController.create);
 routes.put('/administradores/:id', AdministradorController.update);
 routes.delete('/administradores/:id', AdministradorController.delete);
 
 routes.get('/assinaturas', AssinaturaController.findAll);
+routes.get('/assinaturas/ativas', AssinaturaController.findActive);
 routes.get('/assinaturas/:id', AssinaturaController.findByPk);
 routes.post('/assinaturas', AssinaturaController.create);
 routes.put('/assinaturas/:id', AssinaturaController.update);

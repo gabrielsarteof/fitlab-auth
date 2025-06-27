@@ -12,7 +12,16 @@ import { QueryTypes } from 'sequelize';
 class AssinaturaService {
 
   static async findAll() {
-    return await Assinatura.findAll();
+    return Assinatura.findAll({
+      include: ['cliente','plano'],
+      // não precisa mais incluir status manualmente
+    });
+  }
+
+  static async findActive() {
+    return Assinatura
+      .scope('active')
+      .findAll({ include: ['cliente','plano'] });
   }
 
   static async findByPk(req) {

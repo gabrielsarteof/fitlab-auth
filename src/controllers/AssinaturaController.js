@@ -4,9 +4,21 @@ import { AssinaturaService } from "../services/AssinaturaService.js";
 class AssinaturaController {
 
   static async findAll(req, res) {
-    AssinaturaService.findAll()
-      .then(objs => res.json(objs))
-      .catch(err => res.status(400).json({ err: err.message }));
+    try {
+      const list = await AssinaturaService.findAll();
+      return res.json(list);
+    } catch (e) {
+      return res.status(500).json({ message: 'Erro ao listar.' });
+    }
+  }
+
+  static async findActive(req, res) {
+    try {
+      const ativas = await AssinaturaService.findActive();
+      return res.json(ativas);
+    } catch (e) {
+      return res.status(500).json({ message: 'Erro ao listar ativas.' });
+    }
   }
 
   static async findByPk(req, res) {
